@@ -16,7 +16,7 @@ from scipy import stats
 st.set_page_config(
     page_title="Sugar Price Risk Model",
     page_icon="🍬",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="expanded",
 )
 
