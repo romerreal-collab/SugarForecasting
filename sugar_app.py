@@ -127,11 +127,11 @@ st.markdown("""
     width: 100%;
   }
   .stButton > button:hover { background: #e8bf5a; color: #0f1923 !important; }
-  section[data-testid="stSidebar"] .stButton > button { color: #4FE5F0 !important; }
-  section[data-testid="stSidebar"] .stButton > button p { color: #4FE5F0 !important; }
-  section[data-testid="stSidebar"] .stButton > button:hover { color: #4FE5F0 !important; }
+  section[data-testid="stSidebar"] .stButton > button { color: #4A4747 !important; }
+  section[data-testid="stSidebar"] .stButton > button p { color: #4A4747 !important; }
+  section[data-testid="stSidebar"] .stButton > button:hover { color: #4A4747 !important; }
   .apply-btn > button {
-    background: #4FE5F0 !important;
+    background: #4A4747 !important;
     color: #52c87a !important;
     border: 1px solid #52c87a !important;
   }
