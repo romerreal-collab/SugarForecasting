@@ -116,7 +116,7 @@ st.markdown("""
     margin-bottom: 16px;
   }
   .stButton > button {
-    background: #d4a843;
+    background: #1D1D45;
     color: #0f1923 !important;
     font-weight: 700;
     border: none;
