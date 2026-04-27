@@ -335,7 +335,7 @@ with st.sidebar:
 
                 # Compact preview of estimated values
                 st.markdown(
-                    '<div style="font-size:11px;color:#6b7280;font-family:\'IBM Plex Mono\',monospace;margin:8px 0 4px 0">'
+                    '<div style="font-size:11px;color:#000000;font-family:\'IBM Plex Mono\',monospace;margin:8px 0 4px 0">'
                     'ESTIMATED PARAMS</div>', unsafe_allow_html=True
                 )
                 if "GBM" in model:
