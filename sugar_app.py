@@ -246,6 +246,53 @@ def run_mean_revert_paths(S0, kappa, theta, sigma, T, steps_per_year, K, seed):
     return np.linspace(0, T, steps + 1), np.exp(ln_paths)
 
 
+# ── Weekly Prediction Engine ───────────────────────────────────────────────────
+
+def run_weekly_gbm(S0, mu, sigma, n_weeks, N_sim, seed):
+    """Run GBM week-by-week, returning stats at each week."""
+    rng = np.random.default_rng(seed)
+    dt  = 1 / 52
+    prices = np.full(N_sim, S0, dtype=float)
+    weekly_stats = []
+    for w in range(1, n_weeks + 1):
+        Z      = rng.standard_normal(N_sim)
+        prices = prices * np.exp((mu - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * Z)
+        weekly_stats.append({
+            "week":   w,
+            "mean":   float(np.mean(prices)),
+            "median": float(np.median(prices)),
+            "p05":    float(np.percentile(prices, 5)),
+            "p25":    float(np.percentile(prices, 25)),
+            "p75":    float(np.percentile(prices, 75)),
+            "p95":    float(np.percentile(prices, 95)),
+        })
+    return pd.DataFrame(weekly_stats)
+
+
+def run_weekly_ou(S0, kappa, theta, sigma, n_weeks, N_sim, seed):
+    """Run OU week-by-week, returning stats at each week."""
+    rng      = np.random.default_rng(seed)
+    dt       = 1 / 52
+    ln_theta = np.log(theta) - sigma**2 / (2 * kappa)
+    sqrt_dt  = np.sqrt(dt)
+    ln_prices = np.full(N_sim, np.log(S0), dtype=float)
+    weekly_stats = []
+    for w in range(1, n_weeks + 1):
+        Z         = rng.standard_normal(N_sim)
+        ln_prices = ln_prices + kappa * (ln_theta - ln_prices) * dt + sigma * sqrt_dt * Z
+        prices    = np.exp(ln_prices)
+        weekly_stats.append({
+            "week":   w,
+            "mean":   float(np.mean(prices)),
+            "median": float(np.median(prices)),
+            "p05":    float(np.percentile(prices, 5)),
+            "p25":    float(np.percentile(prices, 25)),
+            "p75":    float(np.percentile(prices, 75)),
+            "p95":    float(np.percentile(prices, 95)),
+        })
+    return pd.DataFrame(weekly_stats)
+
+
 # ── Session State Defaults ─────────────────────────────────────────────────────
 
 _defaults = {
@@ -444,6 +491,24 @@ with st.sidebar:
     N_sim = st.number_input("Terminal simulations (N)", min_value=100, value=5000, step=1000)
     K     = st.number_input("Sample paths to display", min_value=1, value=30, step=5)
     seed  = st.number_input("Random seed", min_value=0, value=42, step=1)
+
+    st.markdown("---")
+    st.markdown("### 📅 Weekly Prediction Settings")
+    weekly_n_weeks = st.number_input(
+        "Weeks to forecast", min_value=4, max_value=104, value=26, step=4,
+        help="Number of future weeks shown in the Weekly Prediction bar chart."
+    )
+    weekly_display  = st.selectbox(
+        "Bar shows",
+        ["Median (P50)", "Mean"],
+        help="Central estimate displayed as bar height."
+    )
+    weekly_interval = st.selectbox(
+        "Confidence interval",
+        ["P05–P95 (90%)", "P25–P75 (50%)"],
+        help="Error bars around the weekly bar."
+    )
+
     run   = st.button("▶  Run Simulation", use_container_width=True)
 
 
@@ -466,8 +531,13 @@ GOLD     = "#d4a843"
 TEAL     = "#4a9fb5"
 RED_CLR  = "#e05252"
 GREEN_OK = "#52c87a"
+AMBER    = "#f59e0b"
 
-tab_est, tab_sim = st.tabs(["📊 Parameter Estimator", "🎲 Monte Carlo Simulation"])
+tab_est, tab_sim, tab_weekly = st.tabs([
+    "📊 Parameter Estimator",
+    "🎲 Monte Carlo Simulation",
+    "📅 Weekly Price Prediction",
+])
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -830,6 +900,243 @@ with tab_sim:
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=520)
         st.caption(f"Spot: ₱{S0:,.0f}/Lkg | Break-even: ₱{breakeven:,.0f}/Lkg | Model: {model}")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# TAB 3 — Weekly Price Prediction
+# ════════════════════════════════════════════════════════════════════════════════
+with tab_weekly:
+    if not run:
+        st.info("👈  Configure the sidebar and click **Run Simulation** to generate the weekly prediction chart.", icon="💡")
+        st.stop()
+
+    with st.spinner("Computing week-by-week predictions…"):
+        n_weeks_int = int(weekly_n_weeks)
+        N_sim_int   = int(N_sim)
+
+        if "GBM" in model:
+            wdf = run_weekly_gbm(S0, mu, sigma, n_weeks_int, N_sim_int, seed + 99)
+        else:
+            wdf = run_weekly_ou(S0, kappa, theta, sigma, n_weeks_int, N_sim_int, seed + 99)
+
+    # ── Determine bar centre & interval ──────────────────────────────────────
+    bar_col   = "median" if weekly_display == "Median (P50)" else "mean"
+    bar_label = "Median" if weekly_display == "Median (P50)" else "Mean"
+    if weekly_interval == "P05–P95 (90%)":
+        lo_col, hi_col = "p05", "p95"
+        int_label = "P05–P95"
+    else:
+        lo_col, hi_col = "p25", "p75"
+        int_label = "P25–P75"
+
+    bar_vals = wdf[bar_col].values
+    lo_vals  = wdf[lo_col].values
+    hi_vals  = wdf[hi_col].values
+    weeks    = wdf["week"].values
+
+    # Error bar half-widths (plotly uses symmetric +/-, we show asymmetric)
+    err_plus  = hi_vals - bar_vals
+    err_minus = bar_vals - lo_vals
+
+    # ── Colour each bar by risk zone ─────────────────────────────────────────
+    def bar_color(price, be):
+        if price <= be:
+            return RED_CLR
+        elif price <= be * 1.05:
+            return AMBER
+        else:
+            return GREEN_OK
+
+    colors = [bar_color(v, breakeven) for v in bar_vals]
+
+    # ── KPI summary strip ─────────────────────────────────────────────────────
+    st.markdown('<div class="section-header">Weekly Price Prediction</div>', unsafe_allow_html=True)
+
+    w1, w2, w3, w4, w5 = st.columns(5)
+    w1.metric("Week 1 Forecast",      f"₱{bar_vals[0]:,.0f}",  f"{(bar_vals[0]/S0-1)*100:+.1f}% vs spot")
+    mid_idx = n_weeks_int // 2 - 1
+    w2.metric(f"Week {mid_idx+1} Forecast", f"₱{bar_vals[mid_idx]:,.0f}", f"{(bar_vals[mid_idx]/S0-1)*100:+.1f}% vs spot")
+    w3.metric(f"Week {n_weeks_int} Forecast", f"₱{bar_vals[-1]:,.0f}", f"{(bar_vals[-1]/S0-1)*100:+.1f}% vs spot")
+    weeks_below = int(np.sum(bar_vals <= breakeven))
+    w4.metric("Weeks Below Break-even", f"{weeks_below} / {n_weeks_int}")
+    peak_wk = int(np.argmax(bar_vals)) + 1
+    w5.metric("Peak Forecast Week", f"Week {peak_wk}", f"₱{bar_vals[peak_wk-1]:,.0f}")
+
+    st.markdown("")
+
+    # ── Risk legend ───────────────────────────────────────────────────────────
+    st.markdown(
+        f'<span class="info-pill" style="background:#2d1a1a;color:{RED_CLR}">🔴 At / below break-even</span>'
+        f'<span class="info-pill" style="background:#2b2000;color:{AMBER}">🟡 Within 5% of break-even</span>'
+        f'<span class="info-pill" style="background:#122d1e;color:{GREEN_OK}">🟢 Above break-even +5%</span>'
+        f'<span class="info-pill">Error bars: {int_label}</span>',
+        unsafe_allow_html=True
+    )
+    st.markdown("")
+
+    # ── Main bar chart ────────────────────────────────────────────────────────
+    fig_w = go.Figure()
+
+    # Confidence interval as a shaded area overlay
+    fig_w.add_trace(go.Scatter(
+        x=np.concatenate([weeks, weeks[::-1]]),
+        y=np.concatenate([hi_vals, lo_vals[::-1]]),
+        fill="toself",
+        fillcolor="rgba(74,159,181,0.12)",
+        line_color="rgba(0,0,0,0)",
+        name=f"{int_label} band",
+        hoverinfo="skip",
+    ))
+
+    # Bars — coloured by risk zone
+    fig_w.add_trace(go.Bar(
+        x=weeks,
+        y=bar_vals,
+        name=f"{bar_label} Price",
+        marker_color=colors,
+        marker_line_color="rgba(0,0,0,0)",
+        opacity=0.85,
+        error_y=dict(
+            type="data",
+            symmetric=False,
+            array=err_plus,
+            arrayminus=err_minus,
+            color="#5a7a90",
+            thickness=1.2,
+            width=3,
+        ),
+        customdata=np.stack([lo_vals, hi_vals, wdf["p05"].values, wdf["p95"].values,
+                             wdf["mean"].values, wdf["median"].values], axis=-1),
+        hovertemplate=(
+            "<b>Week %{x}</b><br>"
+            f"{bar_label}: ₱%{{y:,.0f}}<br>"
+            f"{int_label} Low: ₱%{{customdata[0]:,.0f}}<br>"
+            f"{int_label} High: ₱%{{customdata[1]:,.0f}}<br>"
+            "P05: ₱%{customdata[2]:,.0f}<br>"
+            "P95: ₱%{customdata[3]:,.0f}<br>"
+            "Mean: ₱%{customdata[4]:,.0f}<br>"
+            "Median: ₱%{customdata[5]:,.0f}<extra></extra>"
+        ),
+    ))
+
+    # Break-even line
+    fig_w.add_hline(
+        y=breakeven,
+        line_dash="dash", line_color=RED_CLR, line_width=1.5,
+        annotation_text=f"Break-even ₱{breakeven:,.0f}",
+        annotation_font_color=RED_CLR,
+        annotation_position="top right",
+    )
+
+    # Spot price line
+    fig_w.add_hline(
+        y=S0,
+        line_dash="dot", line_color=GOLD, line_width=1,
+        annotation_text=f"Spot ₱{S0:,.0f}",
+        annotation_font_color=GOLD,
+        annotation_position="bottom right",
+    )
+
+    # Optional: mean-reversion long-run mean reference for OU model
+    if "Mean-Reverting" in model:
+        fig_w.add_hline(
+            y=theta,
+            line_dash="dashdot", line_color="#a78bfa", line_width=1,
+            annotation_text=f"Long-run mean θ ₱{theta:,.0f}",
+            annotation_font_color="#a78bfa",
+            annotation_position="top left",
+        )
+
+    fig_w.update_layout(
+        paper_bgcolor=DARK_BG,
+        plot_bgcolor=DARK_BG,
+        font_color=TEXT_CLR,
+        font_family="DM Sans, sans-serif",
+        xaxis=dict(
+            title="Week from Today",
+            gridcolor=GRID_CLR,
+            zeroline=False,
+            tickmode="linear",
+            tick0=1,
+            dtick=max(1, n_weeks_int // 13),
+            tickfont=dict(size=11),
+        ),
+        yaxis=dict(
+            title="Predicted Price (₱/Lkg)",
+            gridcolor=GRID_CLR,
+            zeroline=False,
+            tickprefix="₱",
+            tickformat=",",
+        ),
+        legend=dict(
+            bgcolor=DARK_BG,
+            bordercolor=GRID_CLR,
+            borderwidth=1,
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        bargap=0.25,
+        margin=dict(t=60, b=60, l=70, r=30),
+        height=500,
+        title=dict(
+            text=f"Week-by-Week {bar_label} Sugar Price Forecast · {n_weeks_int} Weeks · {model}",
+            font=dict(family="DM Serif Display, serif", size=16, color="#8ab4cc"),
+            x=0.0,
+            xanchor="left",
+        ),
+    )
+
+    st.plotly_chart(fig_w, use_container_width=True)
+
+    # ── Trend annotation ──────────────────────────────────────────────────────
+    trend_pct = (bar_vals[-1] / S0 - 1) * 100
+    trend_dir = "📈 upward" if trend_pct > 1 else ("📉 downward" if trend_pct < -1 else "➡️ flat")
+    st.caption(
+        f"Overall trend over {n_weeks_int} weeks: **{trend_dir}** · "
+        f"Start ₱{S0:,.0f} → Week {n_weeks_int} {bar_label} ₱{bar_vals[-1]:,.0f} "
+        f"({trend_pct:+.1f}%) · "
+        f"Error bars show {int_label} confidence interval · "
+        f"Based on {N_sim_int:,} Monte Carlo paths."
+    )
+
+    # ── Detailed weekly table ─────────────────────────────────────────────────
+    with st.expander("📋 View detailed weekly forecast table"):
+        tbl_rows = []
+        for _, row in wdf.iterrows():
+            wk   = int(row["week"])
+            med  = row["median"]
+            mn   = row["mean"]
+            p5   = row["p05"]
+            p25r = row["p25"]
+            p75r = row["p75"]
+            p95r = row["p95"]
+            chg  = (med / S0 - 1) * 100
+            risk_flag = "❌ Below" if med <= breakeven else ("⚠️ Near" if med <= breakeven * 1.05 else "✅ Safe")
+            tbl_rows.append({
+                "Week": wk,
+                "Median (₱)": f"₱{med:,.0f}",
+                "Mean (₱)": f"₱{mn:,.0f}",
+                "P05 (₱)": f"₱{p5:,.0f}",
+                "P25 (₱)": f"₱{p25r:,.0f}",
+                "P75 (₱)": f"₱{p75r:,.0f}",
+                "P95 (₱)": f"₱{p95r:,.0f}",
+                "vs Spot": f"{chg:+.1f}%",
+                "Break-even Risk": risk_flag,
+            })
+        tbl_df = pd.DataFrame(tbl_rows)
+        st.dataframe(tbl_df, use_container_width=True, hide_index=True, height=400)
+
+        # Download button
+        st.download_button(
+            "⬇️ Download Weekly Forecast CSV",
+            data=tbl_df.to_csv(index=False),
+            file_name="sugar_weekly_forecast.csv",
+            mime="text/csv",
+            use_container_width=False,
+        )
 
 
 # ── Footer ─────────────────────────────────────────────────────────────────────
