@@ -4,4 +4,4 @@ numpy
 scipy
 pandas
 matplotlib
-components
+anthropic
