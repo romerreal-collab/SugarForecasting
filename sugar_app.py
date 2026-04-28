@@ -3,7 +3,8 @@ Sugar Price Monte Carlo Risk Model — with integrated Parameter Estimator
 Run with: streamlit run sugar_app.py
 Requires: pip install streamlit plotly numpy scipy matplotlib pandas
 """
-
+import streamlit.components.v1 as components
+components.iframe("your-hosted-chatbot-url", height=600)
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -14,6 +15,7 @@ from scipy import stats
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
+    
     page_title="Sugar Price Risk Model",
     page_icon="🍬",
     layout="wide",
