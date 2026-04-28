@@ -14,7 +14,6 @@ from scipy import stats
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
-    
     page_title="Sugar Price Risk Model",
     page_icon="🍬",
     layout="wide",
@@ -311,14 +310,9 @@ for _k, _v in _defaults.items():
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
+    st.markdown("##  🍬 Sugar Price\nMonte Carlo Risk Model")
+    st.markdown("---")
 
-st.markdown("### 🍬 SugarBot — Ask me anything about this app")
-components.iframe("https://squatic.github.io/montecarlo-chatbot/", height=650, scrolling=True)
-    st.markdown(
-        '<div style="font-size:11px;color:#6b7280;font-family:\'IBM Plex Mono\',monospace;margin-bottom:8px">'
-        'Ask the SugarBot.</div>',
-        unsafe_allow_html=True
-    )
 
     # ── Model Setup ──────────────────────────────────────────────────────────
     st.markdown("### Model Setup")
