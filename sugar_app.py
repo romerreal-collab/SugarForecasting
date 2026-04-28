@@ -312,6 +312,9 @@ for _k, _v in _defaults.items():
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("##  🍬 Sugar Price\nMonte Carlo Risk Model")
+    # ── Chatbot ─────────────────────────────────────────────────────────────────────
+st.divider() st.subheader("🍬 MontecarloSugarBot — Ask me anything about this app") 
+components.iframe("https://github.com/squatic/montecarlo-chatbot/", height=650, scrolling=True)
     st.markdown("---")
 
     # ── Model Setup ──────────────────────────────────────────────────────────
@@ -1130,9 +1133,6 @@ with tab_weekly:
         tbl_df = pd.DataFrame(tbl_rows)
         st.dataframe(tbl_df, use_container_width=True, hide_index=True, height=400)
         
-# ── Chatbot ─────────────────────────────────────────────────────────────────────
-st.divider() st.subheader("🍬 MontecarloSugarBot — Ask me anything about this app") 
-components.iframe("https://github.com/squatic/montecarlo-chatbot/", height=650, scrolling=True)
 
         # Download button
         st.download_button(
