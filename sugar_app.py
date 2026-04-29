@@ -11,6 +11,31 @@ from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from scipy import stats
 
+def authenticate():
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+
+    with st.sidebar.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+
+    if submit:
+        if (
+            username == st.secrets["login"]["username"]
+            and password == st.secrets["login"]["password"]
+        ):
+            st.session_state.logged_in = True
+            st.sidebar.success("Logged in")
+        else:
+            st.sidebar.error("Invalid username or password")
+
+    return st.session_state.logged_in
+
+if not authenticate():
+    st.warning("Please log in to use the app.")
+    st.stop()
+
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Sugar Price Risk Model",
