@@ -4,15 +4,15 @@ Run with: streamlit run sugar_app.py
 Requires: pip install streamlit plotly numpy scipy matplotlib pandas
 """
 import streamlit as st
-import sqlite3
-from datetime import datetime
-from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from scipy import stats
+import datetime
+import json
+import os
 
 # ── Database Setup ─────────────────────────────────────────────────────────────
 DB_PATH = Path("app_data.db")
@@ -83,6 +83,48 @@ def authenticate():
     
     return st.session_state.logged_in
 
+def save_simulation(username, model_type, spot_price, horizon_days, results_json):
+    """Save simulation results to database."""
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO simulations(username, timestamp, model_type, spot_price, horizon_days, results)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (username, datetime.utcnow().isoformat(), model_type, spot_price, horizon_days, results_json)
+    )
+    conn.commit()
+    conn.close()
+
+def get_user_simulations(username):
+    """Fetch all simulations for a user."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "SELECT id, timestamp, model_type, spot_price, horizon_days FROM simulations WHERE username = ? ORDER BY timestamp DESC LIMIT 100",
+        (username,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_simulation_detail(sim_id):
+    """Fetch details of a specific simulation."""
+    conn = get_connection()
+    cursor = conn.execute(
+        "SELECT id, timestamp, model_type, spot_price, horizon_days, results FROM simulations WHERE id = ?",
+        (sim_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def delete_simulation(sim_id):
+    """Delete a simulation."""
+    conn = get_connection()
+    conn.execute("DELETE FROM simulations WHERE id = ?", (sim_id,))
+    conn.commit()
+    conn.close()
+
 init_db()
 
 if not authenticate():
@@ -90,134 +132,6 @@ if not authenticate():
     st.stop()
 
 username = st.session_state.username
-
-# ── Page config ────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Sugar Price Risk Model",
-    page_icon="🍬",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# ── Custom CSS ─────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap');
-
-  html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
-  h1, h2, h3 { font-family: 'DM Serif Display', serif; }
-
-  /* Sidebar */
-  section[data-testid="stSidebar"] {
-    background: #0f1923;
-    color: #e8dcc8;
-  }
-  section[data-testid="stSidebar"] label,
-  section[data-testid="stSidebar"] .stSelectbox label,
-  section[data-testid="stSidebar"] p:not(button p) {
-    color: #c9bfac !important;
-    font-size: 0.82rem;
-    font-weight: 500;
-    letter-spacing: 0.03em;
-  }
-  section[data-testid="stSidebar"] .stSlider > div > div > div { background: #d4a843; }
-
-  /* Metric cards */
-  div[data-testid="metric-container"] {
-    background: #0f1923;
-    border: 1px solid #1e2d3d;
-    border-radius: 12px;
-    padding: 1rem 1.2rem;
-    color: #e8dcc8;
-  }
-  div[data-testid="metric-container"] label { color: #8a9ab0 !important; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; }
-  div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #e8dcc8; font-size: 1.6rem; font-weight: 600; }
-  div[data-testid="metric-container"] div[data-testid="stMetricDelta"] { font-size: 0.8rem; }
-
-  /* Main area */
-  .main .block-container { padding-top: 1.5rem; }
-  .section-header {
-    font-family: 'DM Serif Display', serif;
-    font-size: 1.1rem;
-    color: #4a7fa5;
-    border-bottom: 1px solid #1e2d3d;
-    padding-bottom: 0.3rem;
-    margin: 1.5rem 0 1rem 0;
-  }
-  .est-section-header {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px;
-    color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    border-bottom: 1px solid #2e3347;
-    padding-bottom: 8px;
-    margin-bottom: 16px;
-  }
-  .info-pill {
-    display: inline-block;
-    background: #1e2d3d;
-    color: #a8c4d8;
-    border-radius: 20px;
-    padding: 2px 12px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    margin: 2px 3px;
-  }
-  .applied-pill {
-    display: inline-block;
-    background: #122d1e;
-    color: #52c87a;
-    border-radius: 20px;
-    padding: 2px 12px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    margin: 2px 3px;
-  }
-  .alert-danger { background: #2d1a1a; border-left: 3px solid #e05252; padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.85rem; color: #f5a0a0; }
-  .alert-safe   { background: #122d1e; border-left: 3px solid #52c87a; padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.85rem; color: #8de8a8; }
-  .info-box {
-    background: #0f1923;
-    border-left: 3px solid #3b82f6;
-    border-radius: 4px;
-    padding: 12px 16px;
-    font-size: 13px;
-    color: #9ca3af;
-    margin-bottom: 16px;
-  }
-  .warn-box {
-    background: #0f1923;
-    border-left: 3px solid #f59e0b;
-    border-radius: 4px;
-    padding: 12px 16px;
-    font-size: 13px;
-    color: #9ca3af;
-    margin-bottom: 16px;
-  }
-  .stButton > button {
-    background: #FFF600;
-    color: #0f1923 !important;
-    font-weight: 700;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    padding: 0.55rem 1.8rem;
-    letter-spacing: 0.04em;
-    width: 100%;
-  }
-  .stButton > button:hover { background: #F7DC6F; color: #0f1923 !important; }
-  section[data-testid="stSidebar"] .stButton > button { color: #4A4747 !important; }
-  section[data-testid="stSidebar"] .stButton > button p { color: #4A4747 !important; }
-  section[data-testid="stSidebar"] .stButton > button:hover { color: #4A4747 !important; }
-  .apply-btn > button {
-    background: #4A4747 !important;
-    color: #52c87a !important;
-    border: 1px solid #52c87a !important;
-  }
-  .apply-btn > button:hover { background: #255c37 !important; }
-</style>
-""", unsafe_allow_html=True)
-
 
 # ── Parameter Estimation Helpers ───────────────────────────────────────────────
 
@@ -611,10 +525,11 @@ RED_CLR  = "#e05252"
 GREEN_OK = "#52c87a"
 AMBER    = "#f59e0b"
 
-tab_est, tab_sim, tab_weekly = st.tabs([
+tab_est, tab_sim, tab_weekly, tab_history = st.tabs([
     "📊 Parameter Estimator",
     "🎲 Monte Carlo Simulation",
     "📅 Weekly Price Prediction",
+    "📜 Simulation History",
 ])
 
 
