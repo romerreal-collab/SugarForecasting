@@ -11,30 +11,82 @@ from plotly.subplots import make_subplots
 import matplotlib.pyplot as plt
 from scipy import stats
 
+# ── Database Setup ─────────────────────────────────────────────────────────────
+DB_PATH = Path("app_data.db")
+
+def get_connection():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    with get_connection() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS simulations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                model_type TEXT,
+                spot_price REAL,
+                horizon_days INTEGER,
+                results TEXT,
+                FOREIGN KEY(username) REFERENCES users(username)
+            )
+            """
+        )
+        conn.commit()
+
 def authenticate():
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
+        st.session_state.username = ""
 
+    st.sidebar.title("Login")
     with st.sidebar.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
         submit = st.form_submit_button("Login")
 
     if submit:
-        if (
-            username == st.secrets["login"]["username"]
-            and password == st.secrets["login"]["password"]
-        ):
+        password_for_user = st.secrets.get("login", {}).get(username)
+        if password_for_user and password == password_for_user:
             st.session_state.logged_in = True
-            st.sidebar.success("Logged in")
+            st.session_state.username = username
+            conn = get_connection()
+            conn.execute(
+                "INSERT OR IGNORE INTO users(username, created_at) VALUES (?, ?)",
+                (username, datetime.utcnow().isoformat()),
+            )
+            conn.commit()
+            conn.close()
+            st.rerun()
         else:
-            st.sidebar.error("Invalid username or password")
+            st.error("Invalid username or password")
 
+    if st.session_state.logged_in:
+        if st.sidebar.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.rerun()
+    
     return st.session_state.logged_in
 
+init_db()
+
 if not authenticate():
-    st.warning("Please log in to use the app.")
+    st.warning("Please log in using the sidebar.")
     st.stop()
+
+username = st.session_state.username
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
